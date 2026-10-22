@@ -358,6 +358,18 @@ def _launchd_degrade_or_raise(exc: subprocess.CalledProcessError, what: str) -> 
 
 def generate_launchd_plist() -> str:
     from html import escape
+    # LOCAL_PATCH (carriezhaizhe, 2026-10-22): the KeepAlive dict in the plist template below sets
+    # Crashed=true in addition to SuccessfulExit=false. On launchd, SuccessfulExit=false ALONE parks
+    # the job on any exit (including the SIGTERM -> exit 1 path from macOS sleep / shutdown / a manual
+    # stop), so the gateway stayed dead until a human ran `hermes gateway start`. Every channel adapter
+    # went deaf and every cron job silently no-opped -- observed twice on this machine (2026-10-19,
+    # roughly a 24h outage; and again 2026-10-21). Crashed=true revives the job on any non-zero exit
+    # while still parking the clean EX_CONFIG 78->0 stop, and ThrottleInterval keeps it from
+    # respawn-storming. Re-apply after `pip install --upgrade hermes-agent` or any git pull of this
+    # checkout, both of which restore the upstream template. (Kept as a Python comment rather than an
+    # XML comment on purpose: an XML comment may not contain a double hyphen, which prose about
+    # non-zero exit codes inevitably does.)
+
     # Stable cwd anchor — never the volatile source checkout (same rot risk as systemd's WorkingDirectory).
     working_dir = _gw()._stable_service_working_dir()
     hermes_home = str(_gw().get_hermes_home().resolve())
@@ -435,6 +447,8 @@ def generate_launchd_plist() -> str:
     <dict>
         <key>SuccessfulExit</key>
         <false/>
+        <key>Crashed</key>
+        <true/>
     </dict>
 
     <!-- SuccessfulExit=false parks a clean stop (exit 0), including gateway

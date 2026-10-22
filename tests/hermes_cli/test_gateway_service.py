@@ -2546,7 +2546,11 @@ class TestServiceTakeoverGovernance:
         home.mkdir()
         monkeypatch.setattr(gateway_cli, "get_hermes_home", lambda: home)
         parsed = plistlib.loads(gateway_cli.generate_launchd_plist().encode("utf-8"))
-        assert parsed["KeepAlive"] == {"SuccessfulExit": False}
+        # Crashed:true is a LOCAL PATCH (carriezhaizhe, 2026-10-22). SuccessfulExit=false
+        # alone parks the job on ANY exit, including SIGTERM→1, which left the gateway
+        # dead (~24h outage on 2026-10-19 and again on 2026-10-21). Crashed:true revives
+        # on non-zero exit while still parking the clean EX_CONFIG/78→0 stop.
+        assert parsed["KeepAlive"] == {"SuccessfulExit": False, "Crashed": True}
         assert parsed["RunAtLoad"] is True
 
     def test_systemd_unit_does_not_arm_takeover(self, tmp_path, monkeypatch):
